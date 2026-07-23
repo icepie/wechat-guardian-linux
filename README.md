@@ -9,7 +9,8 @@
 首次安装：
 
 ```bash
-cd /home/cola/Documents/dev/wechat-antirecall-linux
+git clone https://github.com/yang316/wechat-antirecall-linux.git
+cd wechat-antirecall-linux
 sudo ./wechat-antirecall install
 ```
 

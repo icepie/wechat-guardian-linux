@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+prefix=/usr/lib/wechat-antirecall
+cli_bin=/usr/local/bin/wechat-antirecall
+library="$prefix/libwechat-antirecall.so"
+inspector="$prefix/antirecall-inspect"
+build_dir="$repo/build"
+
+usage() {
+    cat <<'EOF'
+Usage: wechat-antirecall <command>
+
+Commands:
+  install [blocking|probe]  Build, test and install (default: blocking)
+  enable                    Enable blocking mode
+  probe                     Enable observation-only mode
+  disable                   Disable injection but keep installed files
+  status                    Show configuration and runtime state
+  doctor                    Check dependencies, WeChat version and installation
+  restart                   Restart WeChat through Portable
+  uninstall                 Remove configuration and installed files
+  build                     Build and run tests (source checkout only)
+  help                      Show this help
+EOF
+}
+
+die() { echo "Error: $*" >&2; exit 1; }
+
+require_root() {
+    if [[ ${EUID} -ne 0 && ${WECHAT_ANTI_RECALL_TESTING:-0} != 1 ]]; then
+        die "this command requires root"
+    fi
+}
+
+resolve_user() {
+    if [[ ${WECHAT_ANTI_RECALL_TESTING:-0} == 1 && $(realpath "$0") != /usr/local/bin/wechat-antirecall ]]; then
+        install_user=${WECHAT_ANTI_RECALL_USER:?}
+        install_home=${WECHAT_ANTI_RECALL_HOME:?}
+        state_dir=${STATE_DIR:?}
+        [[ ! -L "$state_dir" ]] || die "refusing symlinked WeChat state path"
+        prefix=${PREFIX:?}
+        cli_bin=${CLI_BIN:?}
+        build_dir=${BUILD_DIR:?}
+        library="$prefix/libwechat-antirecall.so"
+        inspector="$prefix/antirecall-inspect"
+        return
+    fi
+
+    install_user=${SUDO_USER:-${USER:-}}
+    [[ -n "$install_user" && "$install_user" != root ]] || die "cannot identify the desktop user; run with sudo from that user account"
+    install_home=$(getent passwd "$install_user" | cut -d: -f6)
+    [[ -d "$install_home" && ! -L "$install_home" ]] || die "invalid home directory for $install_user"
+    state_dir="$install_home/.local/share/WeChat_Data"
+}
+
+owner_group() { id -gn "$install_user"; }
+
+env_file() { printf '%s/portable.env\n' "$state_dir"; }
+
+ensure_state_dir() {
+    as_user install -d -m 0755 "$install_home/.local" "$install_home/.local/share" "$state_dir"
+}
+
+rewrite_env() {
+    local mode=$1 file
+    file=$(env_file)
+    ensure_state_dir
+    as_user python3 - "$file" "$library" "$mode" <<'PY'
+import os, stat, sys, tempfile
+
+path, library, mode = sys.argv[1:]
+try:
+    info = os.lstat(path)
+    if not stat.S_ISREG(info.st_mode):
+        raise SystemExit("refusing non-regular portable.env")
+    lines = open(path, encoding="utf-8").read().splitlines()
+except FileNotFoundError:
+    if mode == "disabled":
+        raise SystemExit(0)
+    lines = []
+
+output = []
+seen_preload = False
+for line in lines:
+    if line.startswith(("WECHAT_ANTI_RECALL_PROBE_ONLY=", "WECHAT_ANTI_RECALL_VERBOSE=")):
+        continue
+    if line.startswith("LD_PRELOAD="):
+        values = [value for value in line.partition("=")[2].split(":") if value != library]
+        if mode != "disabled":
+            values.append(library)
+            seen_preload = True
+        if values:
+            output.append("LD_PRELOAD=" + ":".join(values))
+    else:
+        output.append(line)
+if mode != "disabled" and not seen_preload:
+    output.append("LD_PRELOAD=" + library)
+if mode == "probe":
+    output.append("WECHAT_ANTI_RECALL_PROBE_ONLY=1")
+
+directory = os.path.dirname(path)
+fd, temporary = tempfile.mkstemp(prefix=".portable.env.", dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        if output:
+            stream.write("\n".join(output) + "\n")
+    if mode == "disabled" and not output:
+        os.unlink(path)
+        os.unlink(temporary)
+    else:
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+finally:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+PY
+}
+
+build_project() {
+    [[ -f "$repo/CMakeLists.txt" ]] || die "build/install must be run from the source checkout"
+    for cmd in cmake ninja c++ pkg-config; do command -v "$cmd" >/dev/null || die "missing $cmd"; done
+    pkg-config --exists zydis 2>/dev/null || [[ -e /usr/lib/libZydis.so ]] || die "missing Zydis; install package: zydis"
+    cmake -S "$repo" -B "$build_dir" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    cmake --build "$build_dir"
+    ctest --test-dir "$build_dir" --output-on-failure
+    "$build_dir/antirecall-inspect" /opt/wechat/wechat
+}
+
+user_pids() { pgrep -u "$(id -u "$install_user")" -x wechat || true; }
+
+as_user() {
+    if [[ ${EUID} -eq 0 ]]; then sudo -u "$install_user" "$@"; else "$@"; fi
+}
+
+restart_wechat() {
+    [[ ${NO_RESTART:-0} == 1 ]] && { echo "Restart skipped (NO_RESTART=1)."; return; }
+    command -v portable >/dev/null || die "portable command not found"
+    local uid runtime wayland log_file
+    uid=$(id -u "$install_user")
+    runtime="/run/user/$uid"
+    wayland=${WAYLAND_DISPLAY:-wayland-1}
+    log_file="$runtime/wechat-antirecall-portable.log"
+
+    if [[ -n "$(user_pids)" ]]; then
+        as_user env HOME="$install_home" XDG_RUNTIME_DIR="$runtime" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" XDG_SESSION_TYPE=wayland \
+            WAYLAND_DISPLAY="$wayland" XDG_DATA_DIRS=/usr/local/share:/usr/share \
+            PORTABLE_CONF=com.qq.weixin portable --actions quit || true
+        for _ in {1..40}; do [[ -z "$(user_pids)" ]] && break; sleep 0.25; done
+        [[ -z "$(user_pids)" ]] || die "existing WeChat process did not exit"
+    fi
+
+    as_user env HOME="$install_home" XDG_RUNTIME_DIR="$runtime" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" XDG_SESSION_TYPE=wayland \
+        WAYLAND_DISPLAY="$wayland" XDG_DATA_DIRS=/usr/local/share:/usr/share \
+        PORTABLE_CONF=com.qq.weixin portable -- >"$log_file" 2>&1 &
+    for _ in {1..40}; do
+        [[ -n "$(user_pids)" ]] && { echo "WeChat restarted."; return; }
+        sleep 0.25
+    done
+    die "WeChat did not start; inspect $log_file"
+}
+
+configured_mode() {
+    local file line value token has_library=0 probe=0
+    file=$(env_file)
+    [[ -f "$file" ]] || { echo disabled; return; }
+    while IFS= read -r line; do
+        case "$line" in
+            LD_PRELOAD=*)
+                value=${line#*=}
+                for token in ${value//:/ }; do [[ "$token" == "$library" ]] && has_library=1; done
+                ;;
+            WECHAT_ANTI_RECALL_PROBE_ONLY=1) probe=1 ;;
+        esac
+    done < "$file"
+    if (( ! has_library )); then echo disabled; elif (( probe )); then echo probe; else echo blocking; fi
+}
+
+show_status() {
+    local pid
+    echo "Mode: $(configured_mode)"
+    [[ -r "$library" ]] && echo "Library: installed ($library)" || echo "Library: not installed"
+    echo "Environment: $(env_file)"
+    pid=$(user_pids | tail -n1)
+    if [[ -z "$pid" ]]; then
+        echo "Runtime: WeChat is not running"
+    elif grep -q 'libwechat-antirecall.so' "/proc/$pid/maps" 2>/dev/null; then
+        echo "Runtime: loaded (PID $pid)"
+    else
+        echo "Runtime: not loaded (PID $pid; restart required)"
+    fi
+}
+
+doctor() {
+    local failed=0 tool
+    for tool in portable; do
+        if command -v "$tool" >/dev/null; then echo "[OK] $tool"; else echo "[FAIL] $tool"; failed=1; fi
+    done
+    if [[ -x "$inspector" ]]; then
+        "$inspector" /opt/wechat/wechat || failed=1
+    elif [[ -x "$build_dir/antirecall-inspect" ]]; then
+        "$build_dir/antirecall-inspect" /opt/wechat/wechat || failed=1
+    else
+        echo "[FAIL] version inspector is not installed; reinstall from the source checkout"
+        failed=1
+    fi
+    show_status
+    return "$failed"
+}
+
+resolve_user
+cmd=${1:-status}
+shift || true
+case "$cmd" in
+    install)
+        mode=${1:-blocking}
+        [[ "$mode" == blocking || "$mode" == probe ]] || die "mode must be blocking or probe"
+        require_root
+        build_project
+        install -d -m 0755 "$prefix"
+        install -m 0755 "$build_dir/libwechat-antirecall.so" "$library"
+        install -m 0755 "$build_dir/antirecall-inspect" "$inspector"
+        install -D -m 0755 "$repo/wechat-antirecall" "$cli_bin"
+        rewrite_env "$mode"
+        echo "Installed in $mode mode."
+        restart_wechat
+        ;;
+    enable|probe|disable)
+        require_root
+        [[ -r "$library" ]] || die "library not installed; run install first"
+        mode=$cmd
+        [[ "$mode" == enable ]] && mode=blocking
+        [[ "$mode" == disable ]] && mode=disabled
+        rewrite_env "$mode"
+        echo "Mode changed to $mode."
+        restart_wechat
+        ;;
+    uninstall)
+        require_root
+        rewrite_env disabled
+        rm -f "$library" "$inspector" "$cli_bin"
+        rmdir "$prefix" 2>/dev/null || true
+        echo "Uninstalled."
+        restart_wechat
+        ;;
+    restart) require_root; restart_wechat ;;
+    build) build_project ;;
+    status) show_status ;;
+    doctor) doctor ;;
+    help|-h|--help) usage ;;
+    *) usage >&2; exit 2 ;;
+esac

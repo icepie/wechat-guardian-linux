@@ -36,4 +36,6 @@ if(BUILD_TESTING)
     target_link_libraries(inline-hook-test PRIVATE antirecall_core)
     target_compile_options(inline-hook-test PRIVATE -fno-omit-frame-pointer -fno-optimize-sibling-calls)
     add_test(NAME inline-hook-test COMMAND inline-hook-test)
+
+    add_test(NAME cli-test COMMAND ${CMAKE_SOURCE_DIR}/tests/test_cli.sh)
 endif()

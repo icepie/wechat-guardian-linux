@@ -12,7 +12,7 @@ build="$tmp/build"
 home="$tmp/home"
 cli_bin="$tmp/usr-local-bin/wechat-antirecall"
 mkdir -p "$fake_bin" "$state" "$build" "$home"
-printf 'test library\n' > "$build/libwechat-antirecall.so"
+printf 'test library\n' > "$build/libwechat-guardian.so"
 
 for cmd in cmake ctest pkg-config ninja c++ portable; do
     printf '#!/usr/bin/env bash\nexit 0\n' > "$fake_bin/$cmd"
@@ -39,19 +39,34 @@ export NO_RESTART=1
 
 cli="$repo/wechat-antirecall"
 env_file="$state/portable.env"
+desktop_file="$home/.local/share/applications/wechat.desktop"
+desktop_backup="$state/wechat-antirecall-native-launcher.json"
 other_lib=/opt/example/libother.so
-printf 'KEEP=this-value\nLD_PRELOAD=%s\n' "$other_lib" > "$env_file"
+legacy_lib="$prefix/libwechat-antirecall.so"
+printf 'KEEP=this-value\nLD_PRELOAD=%s:%s\n' "$other_lib" "$legacy_lib" > "$env_file"
 
-"$cli" install probe
+"$cli" install trace-images
 [[ -x "$cli_bin" && -x "$prefix/antirecall-inspect" ]]
 grep -Fx 'KEEP=this-value' "$env_file"
 grep -Fq "$other_lib" "$env_file"
-grep -Fq "$prefix/libwechat-antirecall.so" "$env_file"
-grep -Fx 'WECHAT_ANTI_RECALL_PROBE_ONLY=1' "$env_file"
+if grep -Fq "$legacy_lib" "$env_file"; then
+    echo 'install left legacy project preload configured' >&2
+    exit 1
+fi
+grep -Fx 'X-WeChatAntiRecall-Managed=true' "$desktop_file"
+grep -Fx "Exec=/usr/bin/env LD_PRELOAD=$prefix/libwechat-guardian.so GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx SDL_IM_MODULE=fcitx XMODIFIERS=@im=fcitx WECHAT_ANTI_RECALL_TRACE_IMAGES=1 /opt/wechat/wechat %U" "$desktop_file"
+[[ -f "$desktop_backup" ]]
 
 status=$("$cli" status)
-grep -Fq 'Mode: probe' <<<"$status"
+grep -Fq 'Mode: image-trace' <<<"$status"
 grep -Fq 'Runtime: WeChat is not running' <<<"$status"
+
+"$cli" auto-original
+grep -Fx "Exec=/usr/bin/env LD_PRELOAD=$prefix/libwechat-guardian.so GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx SDL_IM_MODULE=fcitx XMODIFIERS=@im=fcitx WECHAT_ANTI_RECALL_AUTO_ORIGINAL_IMAGES=1 /opt/wechat/wechat %U" "$desktop_file"
+status=$("$cli" status)
+grep -Fq 'Mode: auto-original' <<<"$status"
+"$cli" install auto-original
+grep -Fx "Exec=/usr/bin/env LD_PRELOAD=$prefix/libwechat-guardian.so GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx SDL_IM_MODULE=fcitx XMODIFIERS=@im=fcitx WECHAT_ANTI_RECALL_AUTO_ORIGINAL_IMAGES=1 /opt/wechat/wechat %U" "$desktop_file"
 
 printf 'AFTER_INSTALL=preserve-me\n' >> "$env_file"
 "$cli" enable
@@ -62,14 +77,17 @@ if grep -q '^WECHAT_ANTI_RECALL_PROBE_ONLY=' "$env_file"; then
     exit 1
 fi
 
+"$cli" trace-images
 "$cli" disable
 grep -Fx 'AFTER_INSTALL=preserve-me' "$env_file"
 grep -Fq "$other_lib" "$env_file"
-if grep -Fq "$prefix/libwechat-antirecall.so" "$env_file"; then
+if grep -Fq "$prefix/libwechat-guardian.so" "$env_file"; then
     echo 'disable left project preload configured' >&2
     exit 1
 fi
-[[ -f "$prefix/libwechat-antirecall.so" ]]
+grep -Fx 'Exec=/opt/wechat/wechat %U' "$desktop_file"
+[[ ! -e "$desktop_backup" ]]
+[[ -f "$prefix/libwechat-guardian.so" ]]
 
 "$cli" uninstall
 grep -Fx 'KEEP=this-value' "$env_file"
@@ -80,7 +98,7 @@ grep -Fq "$other_lib" "$env_file"
 symlink_state="$tmp/symlink-state"
 ln -s "$tmp" "$symlink_state"
 mkdir -p "$prefix"
-printf 'test library\n' > "$prefix/libwechat-antirecall.so"
+printf 'test library\n' > "$prefix/libwechat-guardian.so"
 if STATE_DIR="$symlink_state" "$cli" enable 2>/dev/null; then
     echo 'accepted symlinked state directory' >&2
     exit 1
@@ -89,7 +107,7 @@ fi
 managed_state="$tmp/managed-only-state"
 mkdir -p "$managed_state"
 printf 'LD_PRELOAD=%s\nWECHAT_ANTI_RECALL_PROBE_ONLY=1\n' \
-    "$prefix/libwechat-antirecall.so" > "$managed_state/portable.env"
+    "$prefix/libwechat-guardian.so" > "$managed_state/portable.env"
 STATE_DIR="$managed_state" "$cli" uninstall
 [[ ! -e "$managed_state/portable.env" ]]
 

@@ -2,7 +2,7 @@
 
 面向 Arch Linux 原生微信的运行时防撤回工具。当前已在微信 `4.1.1.8` 上完成真实账号撤回测试：别人撤回后原消息保留，自己撤回仍使用微信原生行为。
 
-> 不修改 `/opt/wechat/wechat` 文件。通过 Portable 的 `portable.env` 注入运行时库；微信升级后版本不匹配会自动停用 Hook。
+> 不修改 `/opt/wechat/wechat` 文件。通过用户级 `.desktop` 启动器注入运行时库，微信升级后版本不匹配会自动停用 Hook。
 
 ## 一键使用
 
@@ -21,7 +21,7 @@ sudo ./wechat-antirecall install
 3. 执行全部自动测试；
 4. 校验当前微信 Build ID 和 Hook 入口机器码；
 5. 安装运行时库；
-6. 写入 Portable 环境配置；
+6. 写入用户级原生桌面启动器；
 7. 自动重启微信。
 
 安装完成后，管理命令也会复制到 `/usr/local/bin`。状态、诊断、模式切换、重启和卸载可在任意目录直接使用：
@@ -40,7 +40,7 @@ sudo wechat-antirecall uninstall
 
 ```text
 Mode: blocking
-Library: installed (/usr/lib/wechat-antirecall/libwechat-antirecall.so)
+Library: installed (/usr/lib/wechat-antirecall/libwechat-guardian.so)
 Runtime: loaded (PID 12345)
 ```
 
@@ -58,6 +58,12 @@ sudo ./wechat-antirecall enable
 
 # 已安装后切换到观察模式
 sudo ./wechat-antirecall probe
+
+# 临时记录图片资源字段；仅用于当前微信版本的原图下载适配，保留防撤回行为
+sudo wechat-antirecall trace-images
+
+# 在收到中图后自动请求原图（当前仅适配微信 4.1.1.8）
+sudo wechat-antirecall auto-original
 
 # 暂时禁用，保留运行时库
 sudo wechat-antirecall disable
@@ -95,7 +101,7 @@ sudo ./scripts/uninstall.sh
 - 架构：x86-64 PIE ELF
 - Build ID：`be2d6b53c50f5cf754b00a8001e5ee88980fdeeb`
 - SHA256：`1630e2bf9ad852e4fca938bb83f99c40d5d8acecdd09b6aa4aac53df761377cf`
-- 启动环境：Arch Linux `portable` / `bwrap`
+- 启动环境：Arch Linux 原生桌面启动器（无 bwrap / Portable 依赖）
 
 微信升级后先运行：
 
@@ -107,11 +113,11 @@ wechat-antirecall doctor
 
 ## 实现原理
 
-1. 将 `LD_PRELOAD=/usr/lib/wechat-antirecall/libwechat-antirecall.so` 写入 `~/.local/share/WeChat_Data/portable.env`。
-2. Portable 启动微信时把 Runtime 加载到微信进程。
+1. 在 `~/.local/share/applications/wechat.desktop` 注入 `LD_PRELOAD=/usr/lib/wechat-antirecall/libwechat-guardian.so`。
+2. 桌面启动器以原生方式启动微信并加载 Runtime。
 3. Runtime 校验 `/proc/self/exe` 的 GNU Build ID。
 4. 从 `/proc/self/maps` 计算 PIE load bias。
-5. 严格校验 `parseRevokeXML` 入口的 32 字节机器码。
+5. 严格校验 `parseRevokeXML` 和图片资源调度入口的 32 字节机器码。
 6. 使用 Zydis 解码并重定位被覆盖的 x86-64 指令，创建 trampoline。
 7. 原函数解析 `<revokemsg>` 后，对远端撤回清空消息结构的 `newmsgid`，阻止原消息删除。
 8. 检测“你撤回了一条消息”等本地撤回标记，保留微信自己的撤回行为。
@@ -122,8 +128,20 @@ wechat-antirecall doctor
 - `newmsgid` 字段偏移：`+0x148`
 - `replacemsg` 字段偏移：`+0x150`
 
-`LD_PRELOAD` 也可能被 Portable 传给微信辅助进程；Runtime 会按 Build ID 自动忽略这些进程。
+`LD_PRELOAD` 可能传给微信辅助进程；Runtime 会按 Build ID 自动忽略这些进程。
 
+
+### 自动原图
+
+`auto-original` 等价于收到图片后自动打开并选择“查看原图”：收到 `type=2` 中图资源后，复制其元数据，仅将资源类型改为 `type=1`、文件 ID 从 `_2` 改为 `_0`、缓存目标从 `_mid_temp` 改为 `_hd_temp`，随后由微信自身下载队列请求、解密和写入可用的原图。服务端没有原图时，微信按原生行为保留已收到的中图；命名不匹配的资源不发起请求。
+
+原图会写入微信的普通图片缓存目录，文件名以 `_hd_temp` 结尾；客户端界面仍可像手动下载一样查看或保存。日志记录“queued full resource”表示请求已进入微信下载队列，不表示服务端一定提供该原图。
+
+当前仅适配微信 `4.1.1.8`；更新微信后 Runtime 会因 Build ID/两个 Hook 入口机器码校验失败而拒绝启用。
+
+### Fcitx5 输入法
+
+启动器显式传递 `GTK_IM_MODULE=fcitx`、`QT_IM_MODULE=fcitx`、`SDL_IM_MODULE=fcitx` 和 `XMODIFIERS=@im=fcitx`，因此通过 `wechat-antirecall restart` 启动时也能连接当前用户会话的 Fcitx5 服务。系统仍需安装并运行 `fcitx5`、`fcitx5-gtk` 与 `fcitx5-qt`。
 ## 手动构建
 
 依赖：

@@ -20,7 +20,7 @@ add_library(wechat_antirecall SHARED
     src/runtime.cpp
 )
 target_link_libraries(wechat_antirecall PRIVATE antirecall_core dl)
-set_target_properties(wechat_antirecall PROPERTIES OUTPUT_NAME wechat-antirecall)
+set_target_properties(wechat_antirecall PROPERTIES OUTPUT_NAME wechat-guardian)
 
 add_executable(antirecall-inspect tools/inspect.cpp)
 target_link_libraries(antirecall-inspect PRIVATE antirecall_core)

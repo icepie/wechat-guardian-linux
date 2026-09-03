@@ -10,7 +10,7 @@ state="$tmp/state"
 prefix="$tmp/prefix"
 build="$tmp/build"
 home="$tmp/home"
-cli_bin="$tmp/usr-local-bin/wechat-antirecall"
+cli_bin="$tmp/usr-local-bin/wechat-guardian"
 mkdir -p "$fake_bin" "$state" "$build" "$home"
 printf 'test library\n' > "$build/libwechat-guardian.so"
 
@@ -21,40 +21,40 @@ cat > "$fake_bin/pgrep" <<'EOF'
 #!/usr/bin/env bash
 exit 1
 EOF
-cat > "$build/antirecall-inspect" <<'EOF'
+cat > "$build/guardian-inspect" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
-chmod +x "$fake_bin"/* "$build/antirecall-inspect"
+chmod +x "$fake_bin"/* "$build/guardian-inspect"
 
 export PATH="$fake_bin:$PATH"
-export WECHAT_ANTI_RECALL_TESTING=1
-export WECHAT_ANTI_RECALL_USER="$(id -un)"
-export WECHAT_ANTI_RECALL_HOME="$home"
+export WECHAT_GUARDIAN_TESTING=1
+export WECHAT_GUARDIAN_USER="$(id -un)"
+export WECHAT_GUARDIAN_HOME="$home"
 export PREFIX="$prefix"
 export STATE_DIR="$state"
 export BUILD_DIR="$build"
 export CLI_BIN="$cli_bin"
 export NO_RESTART=1
 
-cli="$repo/wechat-antirecall"
+cli="$repo/wechat-guardian"
 env_file="$state/portable.env"
 desktop_file="$home/.local/share/applications/wechat.desktop"
-desktop_backup="$state/wechat-antirecall-native-launcher.json"
+desktop_backup="$state/wechat-guardian-native-launcher.json"
 other_lib=/opt/example/libother.so
 legacy_lib="$prefix/libwechat-antirecall.so"
 printf 'KEEP=this-value\nLD_PRELOAD=%s:%s\n' "$other_lib" "$legacy_lib" > "$env_file"
 
 "$cli" install trace-images
-[[ -x "$cli_bin" && -x "$prefix/antirecall-inspect" ]]
+[[ -x "$cli_bin" && -x "$prefix/guardian-inspect" ]]
 grep -Fx 'KEEP=this-value' "$env_file"
 grep -Fq "$other_lib" "$env_file"
 if grep -Fq "$legacy_lib" "$env_file"; then
     echo 'install left legacy project preload configured' >&2
     exit 1
 fi
-grep -Fx 'X-WeChatAntiRecall-Managed=true' "$desktop_file"
-grep -Fx "Exec=/usr/bin/env LD_PRELOAD=$prefix/libwechat-guardian.so GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx SDL_IM_MODULE=fcitx XMODIFIERS=@im=fcitx WECHAT_ANTI_RECALL_TRACE_IMAGES=1 /opt/wechat/wechat %U" "$desktop_file"
+grep -Fx 'X-WeChatGuardian-Managed=true' "$desktop_file"
+grep -Fx "Exec=/usr/bin/env LD_PRELOAD=$prefix/libwechat-guardian.so GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx SDL_IM_MODULE=fcitx XMODIFIERS=@im=fcitx WECHAT_GUARDIAN_TRACE_IMAGES=1 /opt/wechat/wechat %U" "$desktop_file"
 [[ -f "$desktop_backup" ]]
 
 status=$("$cli" status)
@@ -62,17 +62,17 @@ grep -Fq 'Mode: image-trace' <<<"$status"
 grep -Fq 'Runtime: WeChat is not running' <<<"$status"
 
 "$cli" auto-original
-grep -Fx "Exec=/usr/bin/env LD_PRELOAD=$prefix/libwechat-guardian.so GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx SDL_IM_MODULE=fcitx XMODIFIERS=@im=fcitx WECHAT_ANTI_RECALL_AUTO_ORIGINAL_IMAGES=1 /opt/wechat/wechat %U" "$desktop_file"
+grep -Fx "Exec=/usr/bin/env LD_PRELOAD=$prefix/libwechat-guardian.so GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx SDL_IM_MODULE=fcitx XMODIFIERS=@im=fcitx WECHAT_GUARDIAN_AUTO_ORIGINAL_IMAGES=1 /opt/wechat/wechat %U" "$desktop_file"
 status=$("$cli" status)
 grep -Fq 'Mode: auto-original' <<<"$status"
 "$cli" install auto-original
-grep -Fx "Exec=/usr/bin/env LD_PRELOAD=$prefix/libwechat-guardian.so GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx SDL_IM_MODULE=fcitx XMODIFIERS=@im=fcitx WECHAT_ANTI_RECALL_AUTO_ORIGINAL_IMAGES=1 /opt/wechat/wechat %U" "$desktop_file"
+grep -Fx "Exec=/usr/bin/env LD_PRELOAD=$prefix/libwechat-guardian.so GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx SDL_IM_MODULE=fcitx XMODIFIERS=@im=fcitx WECHAT_GUARDIAN_AUTO_ORIGINAL_IMAGES=1 /opt/wechat/wechat %U" "$desktop_file"
 
 printf 'AFTER_INSTALL=preserve-me\n' >> "$env_file"
 "$cli" enable
 grep -Fx 'AFTER_INSTALL=preserve-me' "$env_file"
 grep -Fq "$other_lib" "$env_file"
-if grep -q '^WECHAT_ANTI_RECALL_PROBE_ONLY=' "$env_file"; then
+if grep -q '^WECHAT_GUARDIAN_PROBE_ONLY=' "$env_file"; then
     echo 'enable left probe mode configured' >&2
     exit 1
 fi
@@ -106,7 +106,7 @@ fi
 
 managed_state="$tmp/managed-only-state"
 mkdir -p "$managed_state"
-printf 'LD_PRELOAD=%s\nWECHAT_ANTI_RECALL_PROBE_ONLY=1\n' \
+printf 'LD_PRELOAD=%s\nWECHAT_GUARDIAN_PROBE_ONLY=1\n' \
     "$prefix/libwechat-guardian.so" > "$managed_state/portable.env"
 STATE_DIR="$managed_state" "$cli" uninstall
 [[ ! -e "$managed_state/portable.env" ]]

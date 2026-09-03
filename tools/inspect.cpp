@@ -1,4 +1,4 @@
-#include "antirecall/build_id.hpp"
+#include "guardian/build_id.hpp"
 #include <array>
 #include <cstddef>
 #include <fstream>
@@ -7,7 +7,7 @@
 
 int main(int argc, char** argv) {
     const char* path = argc > 1 ? argv[1] : "/opt/wechat/wechat";
-    const auto id = antirecall::read_gnu_build_id(path);
+    const auto id = guardian::read_gnu_build_id(path);
     if (!id) {
         std::cerr << "unable to read GNU Build ID from " << path << '\n';
         return 1;

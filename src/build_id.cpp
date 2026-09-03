@@ -1,4 +1,4 @@
-#include "antirecall/build_id.hpp"
+#include "guardian/build_id.hpp"
 
 #include <elf.h>
 #include <cstring>
@@ -7,7 +7,7 @@
 #include <sstream>
 #include <vector>
 
-namespace antirecall {
+namespace guardian {
 namespace {
 template <typename T>
 bool read_at(std::ifstream& input, std::streamoff offset, T& value) {
@@ -72,4 +72,4 @@ std::optional<std::string> read_gnu_build_id(std::string_view elf_path) {
     }
     return std::nullopt;
 }
-} // namespace antirecall
+} // namespace guardian

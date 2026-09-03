@@ -1,6 +1,6 @@
-#include "antirecall/build_id.hpp"
-#include "antirecall/inline_hook.hpp"
-#include "antirecall/process.hpp"
+#include "guardian/build_id.hpp"
+#include "guardian/inline_hook.hpp"
+#include "guardian/process.hpp"
 
 #include <algorithm>
 #include <array>
@@ -45,8 +45,8 @@ constexpr std::array<std::byte, 32> expected_image_resource_dispatch_entry{
 // builds where the compiler happens to pass extra context.
 using ParseRevokeXml = bool (*)(void*, void*, void*, std::uintptr_t);
 using DispatchImageResource = int (*)(void*, void*);
-antirecall::InlineHook revoke_hook;
-antirecall::InlineHook image_resource_hook;
+guardian::InlineHook revoke_hook;
+guardian::InlineHook image_resource_hook;
 ParseRevokeXml original_parse_revoke_xml = nullptr;
 DispatchImageResource original_dispatch_image_resource = nullptr;
 std::atomic<unsigned long> blocked_count{0};
@@ -57,7 +57,7 @@ bool trace_images = false;
 bool auto_original_images = false;
 
 void log_line(const char* level, const std::string& message) {
-    std::fprintf(stderr, "[wechat-antirecall] %s: %s\n", level, message.c_str());
+    std::fprintf(stderr, "[wechat-guardian] %s: %s\n", level, message.c_str());
     std::fflush(stderr);
 }
 
@@ -202,10 +202,10 @@ bool hooked_parse_revoke_xml(void* message, void* xml, void* flag, std::uintptr_
 }
 
 void initialize() {
-    probe_only = std::getenv("WECHAT_ANTI_RECALL_PROBE_ONLY") != nullptr;
-    auto_original_images = std::getenv("WECHAT_ANTI_RECALL_AUTO_ORIGINAL_IMAGES") != nullptr;
-    trace_images = std::getenv("WECHAT_ANTI_RECALL_TRACE_IMAGES") != nullptr || auto_original_images;
-    const auto id = antirecall::read_gnu_build_id("/proc/self/exe");
+    probe_only = std::getenv("WECHAT_GUARDIAN_PROBE_ONLY") != nullptr;
+    auto_original_images = std::getenv("WECHAT_GUARDIAN_AUTO_ORIGINAL_IMAGES") != nullptr;
+    trace_images = std::getenv("WECHAT_GUARDIAN_TRACE_IMAGES") != nullptr || auto_original_images;
+    const auto id = guardian::read_gnu_build_id("/proc/self/exe");
     if (!id) {
         log_line("disabled", "cannot read executable GNU Build ID");
         return;
@@ -213,12 +213,12 @@ void initialize() {
     if (*id != supported_build_id) {
         // LD_PRELOAD may be inherited by helper processes; silence those unless
         // explicit diagnostics were requested.
-        if (std::getenv("WECHAT_ANTI_RECALL_VERBOSE")) {
+        if (std::getenv("WECHAT_GUARDIAN_VERBOSE")) {
             log_line("disabled", "unsupported executable Build ID " + *id);
         }
         return;
     }
-    const auto bias = antirecall::find_module_load_bias("/opt/wechat/wechat");
+    const auto bias = guardian::find_module_load_bias("/opt/wechat/wechat");
     if (!bias) {
         log_line("disabled", "cannot locate /opt/wechat/wechat load bias");
         return;
@@ -250,21 +250,21 @@ void initialize() {
 }
 } // namespace
 
-__attribute__((constructor)) static void wechat_antirecall_initialize() {
+__attribute__((constructor)) static void wechat_guardian_initialize() {
     initialize();
 }
 
 extern "C" __attribute__((visibility("default"))) unsigned long
-wechat_antirecall_blocked_count() {
+wechat_guardian_blocked_count() {
     return blocked_count.load();
 }
 
 extern "C" __attribute__((visibility("default"))) unsigned long
-wechat_antirecall_traced_image_count() {
+wechat_guardian_traced_image_count() {
     return traced_image_count.load();
 }
 
 extern "C" __attribute__((visibility("default"))) unsigned long
-wechat_antirecall_queued_original_count() {
+wechat_guardian_queued_original_count() {
     return queued_original_count.load();
 }

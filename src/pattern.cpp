@@ -1,10 +1,10 @@
-#include "antirecall/pattern.hpp"
+#include "guardian/pattern.hpp"
 
 #include <cctype>
 #include <sstream>
 #include <string>
 
-namespace antirecall {
+namespace guardian {
 namespace {
 std::optional<std::byte> parse_hex_byte(std::string_view token) {
     if (token.size() != 2 || !std::isxdigit(static_cast<unsigned char>(token[0])) ||
@@ -63,4 +63,4 @@ std::vector<std::size_t> BytePattern::find_all(std::span<const std::byte> bytes)
     }
     return matches;
 }
-} // namespace antirecall
+} // namespace guardian

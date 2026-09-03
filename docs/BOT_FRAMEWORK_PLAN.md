@@ -76,7 +76,7 @@ Hook 回调内禁止：HTTP/WS、阻塞 I/O、磁盘写入、JSON 序列化、�
 Unix Socket：
 
 ```text
-/run/user/$UID/wechat-antirecall/bot.sock
+/run/user/$UID/wechat-guardian/bot.sock
 ```
 
 帧格式：
@@ -286,7 +286,7 @@ IPC 工作线程不能直接调用发送函数。必须找到微信内部任务�
 ## 7. 代码布局
 
 ```text
-include/antirecall/
+include/guardian/
   bot_protocol.hpp
   event_queue.hpp
   wechat_string.hpp
@@ -319,7 +319,7 @@ tests/
 ## 8. 安全边界
 
 - HTTP 默认只绑定 `127.0.0.1`；
-- Token 安装时生成并保存到 `~/.config/wechat-antirecall/bot.token`，权限 `0600`；
+- Token 安装时生成并保存到 `~/.config/wechat-guardian/bot.token`，权限 `0600`；
 - Unix Socket 目录权限 `0700`，通过 `SO_PEERCRED` 校验 UID；
 - Token 不允许放在 URL query 中；
 - 日志不记录消息正文或 Bearer Token；
@@ -330,13 +330,13 @@ tests/
 ## 9. 管理命令
 
 ```bash
-sudo wechat-antirecall install bot
-wechat-antirecall bot enable
-wechat-antirecall bot enable --receive-only
-wechat-antirecall bot disable
-wechat-antirecall bot status
-wechat-antirecall bot token rotate
-wechat-antirecall bot logs
+sudo wechat-guardian install bot
+wechat-guardian bot enable
+wechat-guardian bot enable --receive-only
+wechat-guardian bot disable
+wechat-guardian bot status
+wechat-guardian bot token rotate
+wechat-guardian bot logs
 ```
 
 守护进程使用用户级 systemd 服务，不以 root 身份运行：

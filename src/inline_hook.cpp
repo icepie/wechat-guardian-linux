@@ -1,4 +1,4 @@
-#include "antirecall/inline_hook.hpp"
+#include "guardian/inline_hook.hpp"
 
 #include <Zydis/Zydis.h>
 #include <algorithm>
@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <vector>
 
-namespace antirecall {
+namespace guardian {
 namespace {
 constexpr std::size_t jump_size = 14;
 
@@ -208,8 +208,8 @@ bool InlineHook::uninstall(std::string& error) {
     overwrite_size_ = 0;
     return true;
 }
-} // namespace antirecall
+} // namespace guardian
 
-extern "C" __attribute__((visibility("default"))) bool antirecall_inline_hook_self_test() {
+extern "C" __attribute__((visibility("default"))) bool guardian_inline_hook_self_test() {
     return true;
 }

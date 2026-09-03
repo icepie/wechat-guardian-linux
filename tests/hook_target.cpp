@@ -1,4 +1,4 @@
-#include "antirecall/inline_hook.hpp"
+#include "guardian/inline_hook.hpp"
 
 #include <array>
 #include <cstddef>
@@ -8,7 +8,7 @@
 
 namespace {
 using Function = int (*)(int);
-antirecall::InlineHook hook;
+guardian::InlineHook hook;
 Function original = nullptr;
 
 __attribute__((noinline)) int target(int value) {

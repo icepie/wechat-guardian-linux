@@ -6,7 +6,7 @@
 #include <span>
 #include <string>
 
-namespace antirecall {
+namespace guardian {
 
 class InlineHook {
 public:
@@ -29,4 +29,4 @@ private:
     std::array<std::byte, 32> original_{};
 };
 
-} // namespace antirecall
+} // namespace guardian

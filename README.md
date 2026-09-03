@@ -1,6 +1,6 @@
-# WeChat Anti-Recall for Linux
+# WeChat Guardian for Linux
 
-面向 Arch Linux 原生微信的运行时防撤回工具。当前已在微信 `4.1.1.8` 上完成真实账号撤回测试：别人撤回后原消息保留，自己撤回仍使用微信原生行为。
+面向 Arch Linux 原生微信的运行时增强工具。目前提供防撤回和自动原图能力，并规划本地 HTTP/WebSocket 机器人接口。防撤回已在微信 `4.1.1.8` 上完成真实账号测试：别人撤回后原消息保留，自己撤回仍使用微信原生行为。
 
 > 不修改 `/opt/wechat/wechat` 文件。通过用户级 `.desktop` 启动器注入运行时库，微信升级后版本不匹配会自动停用 Hook。
 
@@ -9,9 +9,9 @@
 首次安装：
 
 ```bash
-git clone https://github.com/yang316/wechat-antirecall-linux.git
-cd wechat-antirecall-linux
-sudo ./wechat-antirecall install
+git clone https://github.com/icepie/wechat-guardian-linux.git
+cd wechat-guardian-linux
+sudo ./wechat-guardian install
 ```
 
 这条命令会自动：
@@ -27,20 +27,20 @@ sudo ./wechat-antirecall install
 安装完成后，管理命令也会复制到 `/usr/local/bin`。状态、诊断、模式切换、重启和卸载可在任意目录直接使用：
 
 ```bash
-wechat-antirecall status
-wechat-antirecall doctor
-sudo wechat-antirecall enable
-sudo wechat-antirecall disable
-sudo wechat-antirecall uninstall
+wechat-guardian status
+wechat-guardian doctor
+sudo wechat-guardian enable
+sudo wechat-guardian disable
+sudo wechat-guardian uninstall
 ```
 
-`install` 和 `build` 需要访问源代码，请在项目目录使用 `./wechat-antirecall`。
+`install` 和 `build` 需要访问源代码，请在项目目录使用 `./wechat-guardian`。
 
 正常状态示例：
 
 ```text
 Mode: blocking
-Library: installed (/usr/lib/wechat-antirecall/libwechat-guardian.so)
+Library: installed (/usr/lib/wechat-guardian/libwechat-guardian.so)
 Runtime: loaded (PID 12345)
 ```
 
@@ -48,40 +48,40 @@ Runtime: loaded (PID 12345)
 
 ```bash
 # 安装并启用正式防撤回
-sudo ./wechat-antirecall install
+sudo ./wechat-guardian install
 
 # 只观察撤回事件，不阻止消息删除
-sudo ./wechat-antirecall install probe
+sudo ./wechat-guardian install probe
 
 # 已安装后切换到正式防撤回
-sudo ./wechat-antirecall enable
+sudo ./wechat-guardian enable
 
 # 已安装后切换到观察模式
-sudo ./wechat-antirecall probe
+sudo ./wechat-guardian probe
 
 # 临时记录图片资源字段；仅用于当前微信版本的原图下载适配，保留防撤回行为
-sudo wechat-antirecall trace-images
+sudo wechat-guardian trace-images
 
 # 在收到中图后自动请求原图（当前仅适配微信 4.1.1.8）
-sudo wechat-antirecall auto-original
+sudo wechat-guardian auto-original
 
 # 暂时禁用，保留运行时库
-sudo wechat-antirecall disable
+sudo wechat-guardian disable
 
 # 查看状态
-wechat-antirecall status
+wechat-guardian status
 
 # 检查依赖、微信版本和安装状态
-wechat-antirecall doctor
+wechat-guardian doctor
 
 # 仅构建和测试
-./wechat-antirecall build
+./wechat-guardian build
 
 # 手动重启微信
-sudo wechat-antirecall restart
+sudo wechat-guardian restart
 
 # 完全卸载
-sudo wechat-antirecall uninstall
+sudo wechat-guardian uninstall
 ```
 
 原有脚本仍可使用，内部会转发到统一命令：
@@ -106,14 +106,14 @@ sudo ./scripts/uninstall.sh
 微信升级后先运行：
 
 ```bash
-wechat-antirecall doctor
+wechat-guardian doctor
 ```
 
 如果出现 `unsupported Build ID`，说明新版微信尚未适配。Runtime 不会用旧地址强行 Hook。
 
 ## 实现原理
 
-1. 在 `~/.local/share/applications/wechat.desktop` 注入 `LD_PRELOAD=/usr/lib/wechat-antirecall/libwechat-guardian.so`。
+1. 在 `~/.local/share/applications/wechat.desktop` 注入 `LD_PRELOAD=/usr/lib/wechat-guardian/libwechat-guardian.so`。
 2. 桌面启动器以原生方式启动微信并加载 Runtime。
 3. Runtime 校验 `/proc/self/exe` 的 GNU Build ID。
 4. 从 `/proc/self/maps` 计算 PIE load bias。
@@ -141,7 +141,7 @@ wechat-antirecall doctor
 
 ### Fcitx5 输入法
 
-启动器显式传递 `GTK_IM_MODULE=fcitx`、`QT_IM_MODULE=fcitx`、`SDL_IM_MODULE=fcitx` 和 `XMODIFIERS=@im=fcitx`，因此通过 `wechat-antirecall restart` 启动时也能连接当前用户会话的 Fcitx5 服务。系统仍需安装并运行 `fcitx5`、`fcitx5-gtk` 与 `fcitx5-qt`。
+启动器显式传递 `GTK_IM_MODULE=fcitx`、`QT_IM_MODULE=fcitx`、`SDL_IM_MODULE=fcitx` 和 `XMODIFIERS=@im=fcitx`，因此通过 `wechat-guardian restart` 启动时也能连接当前用户会话的 Fcitx5 服务。系统仍需安装并运行 `fcitx5`、`fcitx5-gtk` 与 `fcitx5-qt`。
 ## 手动构建
 
 依赖：
@@ -156,7 +156,7 @@ sudo pacman -S --needed cmake ninja gcc zydis
 cmake -S . -B build -G Ninja
 cmake --build build
 ctest --test-dir build --output-on-failure
-./build/antirecall-inspect /opt/wechat/wechat
+./build/guardian-inspect /opt/wechat/wechat
 ```
 
 自动测试包括：
@@ -175,19 +175,19 @@ ctest --test-dir build --output-on-failure
 重新启动微信：
 
 ```bash
-sudo wechat-antirecall restart
+sudo wechat-guardian restart
 ```
 
 随后检查：
 
 ```bash
-wechat-antirecall status
+wechat-guardian status
 ```
 
 ### 微信升级后失效
 
 ```bash
-wechat-antirecall doctor
+wechat-guardian doctor
 ```
 
 若 Build ID 不受支持，需要重新逆向定位新版微信，不能直接复用旧 RVA 和结构偏移。
@@ -197,19 +197,19 @@ wechat-antirecall doctor
 立即禁用注入：
 
 ```bash
-sudo wechat-antirecall disable
+sudo wechat-guardian disable
 ```
 
 或完全卸载：
 
 ```bash
-sudo wechat-antirecall uninstall
+sudo wechat-guardian uninstall
 ```
 
 ## 已验证行为
 
 - 私聊中别人撤回普通文本：原消息保留；
-- Runtime 在 Portable/bwrap 沙箱内成功加载；
+- Runtime 通过用户级原生桌面启动器成功加载；
 - 自己撤回的识别逻辑已实现；建议在每次微信升级适配后重新回归此场景；
 - 完全退出并重新启动微信后仍然生效；
 - 未知 Build ID 安全禁用，不安装 Hook。
@@ -225,10 +225,14 @@ sudo wechat-antirecall uninstall
 ## 项目目录
 
 ```text
-wechat-antirecall          统一管理命令
+wechat-guardian            统一管理命令
 src/runtime.cpp            撤回 Hook 逻辑
 src/inline_hook.cpp        x86-64 Hook/trampoline
 scripts/                   兼容旧命令的包装脚本
 tools/inspect.cpp          微信版本和目标机器码检查
 tests/                     自动测试
 ```
+
+## 机器人框架计划
+
+HTTP/WS 机器人框架的边界、协议、实施阶段和验收标准见 [`docs/BOT_FRAMEWORK_PLAN.md`](docs/BOT_FRAMEWORK_PLAN.md)。

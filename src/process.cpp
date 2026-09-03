@@ -1,11 +1,11 @@
-#include "antirecall/process.hpp"
+#include "guardian/process.hpp"
 
 #include <charconv>
 #include <fstream>
 #include <sstream>
 #include <string>
 
-namespace antirecall {
+namespace guardian {
 std::optional<std::uintptr_t> find_module_load_bias(std::string_view module_path) {
     std::ifstream maps("/proc/self/maps");
     std::string line;
@@ -35,4 +35,4 @@ std::optional<std::uintptr_t> find_module_load_bias(std::string_view module_path
     }
     return std::nullopt;
 }
-} // namespace antirecall
+} // namespace guardian

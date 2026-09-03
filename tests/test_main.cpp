@@ -1,5 +1,5 @@
-#include "antirecall/build_id.hpp"
-#include "antirecall/pattern.hpp"
+#include "guardian/build_id.hpp"
+#include "guardian/pattern.hpp"
 
 #include <cstdlib>
 #include <iostream>
@@ -18,7 +18,7 @@ void expect(bool condition, const std::string& message) {
 }
 
 int main() {
-    using antirecall::BytePattern;
+    using guardian::BytePattern;
 
     const auto pattern = BytePattern::parse("48 8B ?? ?? E8 ? ? ? ?");
     expect(pattern.has_value(), "valid wildcard pattern parses");
@@ -35,7 +35,7 @@ int main() {
     }
     expect(!BytePattern::parse("48 ZZ").has_value(), "invalid hex pattern is rejected");
 
-    const auto id = antirecall::read_gnu_build_id("/opt/wechat/wechat");
+    const auto id = guardian::read_gnu_build_id("/opt/wechat/wechat");
     expect(id.has_value(), "reads GNU Build ID from current WeChat ELF");
     expect(id && *id == "be2d6b53c50f5cf754b00a8001e5ee88980fdeeb",
            "current WeChat Build ID matches supported build");

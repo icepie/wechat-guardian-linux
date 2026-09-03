@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-namespace antirecall {
+namespace guardian {
 
 class BytePattern {
 public:
@@ -23,4 +23,4 @@ private:
     std::vector<Token> tokens_;
 };
 
-} // namespace antirecall
+} // namespace guardian

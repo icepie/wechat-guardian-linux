@@ -12,6 +12,7 @@ add_library(guardian_core STATIC
     src/inline_hook.cpp
     src/pattern.cpp
     src/process.cpp
+    src/image_resource.cpp
 )
 target_include_directories(guardian_core PUBLIC include)
 target_link_libraries(guardian_core PUBLIC Zydis)

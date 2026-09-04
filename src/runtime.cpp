@@ -1,8 +1,8 @@
 #include "guardian/build_id.hpp"
 #include "guardian/inline_hook.hpp"
 #include "guardian/process.hpp"
+#include "guardian/image_resource.hpp"
 
-#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -81,23 +81,6 @@ std::string read_wechat_string(const void* address) {
     return {data, size};
 }
 
-bool replace_suffix(std::string& value, std::string_view from, std::string_view to) {
-    if (!value.ends_with(from)) return false;
-    value.replace(value.size() - from.size(), from.size(), to);
-    return true;
-}
-
-// Writes a borrowed libc++ long-string view. Image dispatch copies these fields
-// synchronously into its request; the stack-backed source remains alive through
-// that call and is never handed to a destructor.
-void set_borrowed_wechat_string(std::byte* destination, const std::string& value) {
-    std::memset(destination, 0, 24);
-    destination[0] = std::byte{1};
-    const auto size = value.size();
-    const auto* data = value.data();
-    std::memcpy(destination + 8, &size, sizeof(size));
-    std::memcpy(destination + 16, &data, sizeof(data));
-}
 
 bool looks_like_self_recall(std::string_view tip) {
     constexpr std::string_view markers[]{
@@ -109,13 +92,14 @@ bool looks_like_self_recall(std::string_view tip) {
     return false;
 }
 
-// The layout is captured from a live 4.1.1.8 client. In auto-original mode,
-// dispatching a type-2 mid-image resource produces one type-1 full-image request.
-// Other resource types retain the observation-only path.
+// The layout is captured from a live 4.1.1.8 client. Thumbnail (type 3) and
+// mid-image (type 2) resources already contain the full-image CDN key/AES key.
+// The dispatcher must see the upgraded resource on its first call: calling it
+// again after delivery is rejected as a duplicate and never writes a file.
 int hooked_dispatch_image_resource(void* service, void* resource) {
     if (!resource) return original_dispatch_image_resource(service, resource);
 
-    const auto* bytes = static_cast<const std::byte*>(resource);
+    auto* bytes = static_cast<std::byte*>(resource);
     const auto field = [bytes](std::ptrdiff_t offset) { return read_wechat_string(bytes + offset); };
     const auto u32 = [bytes](std::ptrdiff_t offset) {
         std::uint32_t value = 0;
@@ -136,38 +120,19 @@ int hooked_dispatch_image_resource(void* service, void* resource) {
                                     " aeskey=" + field(0x70) + " path=" + field(0x88));
     }
 
-    const bool request_full_image = auto_original_images && type == 2;
-    std::array<std::byte, 0x470> full_resource{};
-    bool full_request_ready = false;
-    std::string path;
-    if (request_full_image) {
-        // The dispatcher is allowed to recycle its input. Build the complete
-        // follow-up request while the delivered resource is still live.
-        auto id = field(0x40);
-        path = field(0x88);
-        if (replace_suffix(id, "_2", "_0") &&
-            replace_suffix(path, "_mid_temp", "_hd_temp")) {
-            // The client owns every non-string field. The copied request switches
-            // only from its delivered mid-image to its full-image counterpart.
-            std::memcpy(full_resource.data(), resource, full_resource.size());
-            const std::uint32_t full_type = 1;
-            std::memcpy(full_resource.data() + 0xa0, &full_type, sizeof(full_type));
-            set_borrowed_wechat_string(full_resource.data() + 0x40, id);
-            set_borrowed_wechat_string(full_resource.data() + 0x88, path);
-            full_request_ready = true;
+    if (auto_original_images && (type == 2 || type == 3)) {
+        std::string upgraded_path;
+        if (guardian::upgrade_image_resource(resource, upgraded_path)) {
+            const auto queued = ++queued_original_count;
+            log_line("original-image", "upgraded full resource=" + std::to_string(queued) +
+                                       " path=" + upgraded_path);
         } else {
-            log_line("original-image", "skipped resource with unrecognized mid-image naming");
+            log_line("original-image", "skipped resource id=" + field(0x40) +
+                                       " path=" + field(0x88));
         }
     }
 
-    const int result = original_dispatch_image_resource(service, resource);
-    if (!full_request_ready) return result;
-
-    const int full_result = original_dispatch_image_resource(service, full_resource.data());
-    const auto queued = ++queued_original_count;
-    log_line("original-image", "queued full resource=" + std::to_string(queued) +
-                               " result=" + std::to_string(full_result) + " path=" + path);
-    return result;
+    return original_dispatch_image_resource(service, resource);
 }
 
 bool hooked_parse_revoke_xml(void* message, void* xml, void* flag, std::uintptr_t context) {
